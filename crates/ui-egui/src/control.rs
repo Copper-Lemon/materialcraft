@@ -257,8 +257,13 @@ pub fn handle(app: &mut MaterialCraftApp, ctx: &egui::Context, method: &str, p: 
         }
         "command.list" => ok(materialcraft_engine::commands::list(&app.session, p.get("filter").and_then(Value::as_str))),
         "session.inspect" => {
-            app.session.cook_if_dirty();
-            ok(materialcraft_engine::inspect::session(&app.session, None))
+            match crate::cook::guard("session.inspect", || {
+                app.session.cook_if_dirty();
+                Ok(materialcraft_engine::inspect::session(&app.session, None))
+            }) {
+                Ok(v) => ok(v),
+                Err(e) => err(e),
+            }
         }
         "ui.inspect" => {
             let rect = |r: egui::Rect| json!([r.min.x, r.min.y, r.width(), r.height()]);
