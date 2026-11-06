@@ -253,15 +253,16 @@ fn handle_inner(app: &mut MaterialCraftApp, ctx: &egui::Context, method: &str, p
             let Some(id) = p.get("id").and_then(Value::as_str) else { return err("`id` is required") };
             let params = p.get("params").cloned().unwrap_or(Value::Null);
             match crate::cook::guard("command request", || {
-                materialcraft_engine::commands::execute_request(&mut app.session, id, &params).map_err(|error| error.to_string())
+                Ok(materialcraft_engine::commands::execute_request(&mut app.session, id, &params).map_err(|error| error.to_string()))
             }) {
-                Ok(v) => {
+                Ok(Ok(v)) => {
                     if id == "view.previewSize" {
                         app.ui.prefs.preview_size = app.session.preview_size.unwrap_or(0);
                     }
                     app.close_subgraph_after(id);
                     ok(v)
                 }
+                Ok(Err(e)) => err(e),
                 Err(e) => {
                     app.session.dirty = false;
                     err(e)
