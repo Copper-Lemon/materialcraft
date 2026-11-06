@@ -226,6 +226,16 @@ fn merge_json(dst: &mut Value, patch: &Value) {
 }
 
 pub fn handle(app: &mut MaterialCraftApp, ctx: &egui::Context, method: &str, p: &Value) -> Value {
+    match crate::cook::guard("control request", || Ok(handle_inner(app, ctx, method, p))) {
+        Ok(v) => v,
+        Err(e) => {
+            app.session.dirty = false;
+            err(e)
+        }
+    }
+}
+
+fn handle_inner(app: &mut MaterialCraftApp, ctx: &egui::Context, method: &str, p: &Value) -> Value {
     match method {
         "ping" => ok(json!("pong")),
         "ui.resize" => {
@@ -252,17 +262,26 @@ pub fn handle(app: &mut MaterialCraftApp, ctx: &egui::Context, method: &str, p: 
                     app.close_subgraph_after(id);
                     ok(v)
                 }
-                Err(e) => err(e),
+                Err(e) => {
+                    app.session.dirty = false;
+                    err(e)
+                }
             }
         }
         "command.list" => ok(materialcraft_engine::commands::list(&app.session, p.get("filter").and_then(Value::as_str))),
         "session.inspect" => {
             match crate::cook::guard("session.inspect", || {
                 app.session.cook_if_dirty();
+                if app.session.graph().is_err() {
+                    return Err(format!("invalid graph {}", app.session.graph));
+                }
                 Ok(materialcraft_engine::inspect::session(&app.session, None))
             }) {
                 Ok(v) => ok(v),
-                Err(e) => err(e),
+                Err(e) => {
+                    app.session.dirty = false;
+                    err(e)
+                }
             }
         }
         "ui.inspect" => {
@@ -395,5 +414,22 @@ mod tests {
         assert!(app.ui.image_camera.zoom > 0.0);
         let c = &app.ui.graph_camera;
         assert!((c.pan[0] + 100.0 / c.zoom).is_finite());
+    }
+
+    #[test]
+    fn session_inspect_panic_returns_error_and_resets_cook_state() {
+        let mut app = app();
+        let ctx = egui::Context::default();
+        app.session.preview_size = Some(64);
+        app.session.cook();
+        let valid_graph = app.session.graph;
+        app.session.graph = app.session.graph.wrapping_add(1_000);
+        app.session.dirty = true;
+        let r = handle(&mut app, &ctx, "session.inspect", &json!({}));
+        assert_eq!(r["ok"], json!(false), "{r}");
+        assert!(!app.session.dirty, "cook state not reset after panic: dirty={}", app.session.dirty);
+        app.session.graph = valid_graph;
+        let r = handle(&mut app, &ctx, "session.inspect", &json!({}));
+        assert_eq!(r["ok"], json!(true), "{r}");
     }
 }
