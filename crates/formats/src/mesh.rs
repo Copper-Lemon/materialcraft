@@ -55,11 +55,12 @@ fn check_obj_vertex_bound(bytes: &[u8]) -> Result<()> {
                     return Err(bad("the mesh is too large"));
                 }
             }
-            Some("f") => {
+            Some("f") | Some("l") => {
                 // A triangulated face with k corners yields k - 2 triangles, so
                 // a mesh within the triangle limit has at most 3 * MAX_TRIANGLES
-                // corners. Bounding corners also bounds the vertices the parser
-                // expands from distinct face index combinations.
+                // corners. Lines are expanded by the parser like faces, so
+                // bounding their corners too bounds the vertices the parser
+                // expands from distinct index combinations.
                 face_corners = face_corners.saturating_add(tokens.count());
                 if face_corners > 3 * MAX_TRIANGLES {
                     return Err(bad("the mesh is too large"));
@@ -196,6 +197,9 @@ fn gltf(bytes: &[u8]) -> Result<Mesh> {
             match reader.read_normals() {
                 Some(ns) => {
                     for q in ns {
+                        if normals.len() >= MAX_VERTICES {
+                            return Err(bad("the mesh is too large"));
+                        }
                         let v = m.transform_vector3(Vec3::from(q));
                         if !v.is_finite() {
                             return Err(bad("the mesh has non-finite (NaN or infinite) normals"));
@@ -206,7 +210,14 @@ fn gltf(bytes: &[u8]) -> Result<Mesh> {
                 None => all_normals = false,
             }
             match reader.read_tex_coords(0) {
-                Some(t) => uvs.extend(t.into_f32().map(Vec2::from)),
+                Some(t) => {
+                    for uv in t.into_f32() {
+                        if uvs.len() >= MAX_VERTICES {
+                            return Err(bad("the mesh is too large"));
+                        }
+                        uvs.push(Vec2::from(uv));
+                    }
+                }
                 None => uvs.extend(std::iter::repeat_n(Vec2::ZERO, n)),
             }
             match reader.read_indices() {
