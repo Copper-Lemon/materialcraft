@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn obj_with_excess_vertices_is_rejected() {
         let mut obj = String::from("v 0 0 0\nv 1 0 0\nv 0 1 0\n");
-        for _ in 0..4_000_000 {
+        for _ in 0..3 * MAX_TRIANGLES {
             obj.push_str("v 1 0 0\n");
         }
         obj.push_str("f 1 2 3\n");
