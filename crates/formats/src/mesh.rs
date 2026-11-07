@@ -314,7 +314,39 @@ mod tests {
         }
         obj.push_str("f 1 2 3\n");
 
-        assert!(load_mesh("excess.obj", obj.as_bytes()).is_err());
+        let e = load_mesh("excess.obj", obj.as_bytes()).unwrap_err();
+        assert!(matches!(&e, FormatError::BadPackage(msg) if msg == "the mesh is too large"), "{e:?}");
+    }
+
+    #[test]
+    fn gltf_with_excess_vertices_is_rejected() {
+        use base64::Engine as _;
+        // One position accessor of 100_000 vertices, referenced by 121
+        // primitives: the cumulative count exceeds MAX_VERTICES on the
+        // last primitive, while the single indexed triangle per primitive
+        // stays far below the triangle limit.
+        const COUNT: usize = 100_000;
+        let mut buf = vec![0u8; COUNT * 12];
+        // Give the referenced triangle non-degenerate positions.
+        for (i, v) in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]].iter().enumerate() {
+            buf[i * 12..i * 12 + 12].copy_from_slice(&v.iter().flat_map(|f| f.to_le_bytes()).collect::<Vec<_>>());
+        }
+        buf.extend([0u16, 1, 2].iter().flat_map(|i| i.to_le_bytes()));
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+        let prim = r#"{"attributes":{"POSITION":0},"indices":1}"#;
+        let prims = (0..121).map(|_| prim).collect::<Vec<_>>().join(",");
+        let gltf = format!(
+            r#"{{"asset":{{"version":"2.0"}},"scene":0,"scenes":[{{"nodes":[0]}}],"nodes":[{{"mesh":0}}],
+"meshes":[{{"primitives":[{prims}]}}],
+"accessors":[{{"bufferView":0,"componentType":5126,"count":{COUNT},"type":"VEC3","min":[0.0,0.0,0.0],"max":[1.0,1.0,0.0]}},{{"bufferView":1,"componentType":5123,"count":3,"type":"SCALAR"}}],
+"bufferViews":[{{"buffer":0,"byteOffset":0,"byteLength":{}}},{{"buffer":0,"byteOffset":{},"byteLength":6}}],
+"buffers":[{{"byteLength":{},"uri":"data:application/octet-stream;base64,{b64}"}}]}}"#,
+            COUNT * 12,
+            COUNT * 12,
+            buf.len()
+        );
+        let e = load_mesh("excess.gltf", gltf.as_bytes()).unwrap_err();
+        assert!(matches!(&e, FormatError::BadPackage(msg) if msg == "the mesh is too large"), "{e:?}");
     }
 
     #[test]
