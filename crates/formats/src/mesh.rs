@@ -14,7 +14,7 @@ pub const MESH_EXTENSIONS: &[&str] = &["obj", "glb", "gltf"];
 const MAX_TRIANGLES: usize = 4_000_000;
 
 /// Largest mesh accepted (vertices).
-const MAX_VERTICES: usize = 4_000_000;
+const MAX_VERTICES: usize = 3 * MAX_TRIANGLES;
 
 fn check_vertex_bound(current: usize, added: usize) -> Result<()> {
     if current.checked_add(added).is_none_or(|total| total > MAX_VERTICES) {
@@ -378,5 +378,11 @@ mod tests {
         assert!(load_mesh("x.glb", b"glTF garbage").is_err());
         assert!(load_mesh("x.fbx", b"").is_err());
         assert!(load_mesh("x.obj", b"v 0 0 0\nf 1 2 3\n").is_err());
+    }
+
+    #[test]
+    fn vertex_bound_allows_three_vertices_per_triangle() {
+        assert!(check_vertex_bound(0, 3 * MAX_TRIANGLES).is_ok());
+        assert!(check_vertex_bound(0, 3 * MAX_TRIANGLES + 1).is_err());
     }
 }
